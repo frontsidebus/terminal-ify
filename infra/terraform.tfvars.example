@@ -1,0 +1,4 @@
+aws_region            = "us-east-1"
+domain_name           = "terminalify.343-guilty-spark.io"
+spotify_client_id     = "your-spotify-client-id"
+spotify_client_secret = "your-spotify-client-secret"

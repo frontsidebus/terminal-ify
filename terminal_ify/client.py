@@ -1,4 +1,11 @@
+import json
 import os
+import sys
+import time
+import uuid
+import webbrowser
+from urllib.request import urlopen
+from urllib.error import URLError
 
 from dotenv import load_dotenv
 import spotipy
@@ -6,6 +13,9 @@ from spotipy.oauth2 import SpotifyOAuth
 from spotipy.exceptions import SpotifyException
 
 load_dotenv()
+
+REMOTE_CALLBACK_URL = "https://terminalify.343-guilty-spark.io/callback"
+REMOTE_TOKEN_URL = "https://terminalify.343-guilty-spark.io/token"
 
 SCOPES = " ".join([
     "user-read-playback-state",
@@ -20,14 +30,91 @@ SCOPES = " ".join([
 ])
 
 
+def remote_auth() -> bool:
+    """Authenticate via the remote AWS Lambda OAuth callback flow.
+
+    Opens the Spotify authorization page in the user's browser, then polls
+    the remote token endpoint until tokens are returned or the timeout is
+    reached.
+
+    Returns True on success, False on timeout.
+    """
+    client_id = os.getenv("SPOTIPY_CLIENT_ID")
+    session_id = str(uuid.uuid4())
+
+    authorize_url = (
+        "https://accounts.spotify.com/authorize"
+        f"?client_id={client_id}"
+        "&response_type=code"
+        f"&redirect_uri={REMOTE_CALLBACK_URL}"
+        f"&scope={SCOPES}"
+        f"&state={session_id}"
+    )
+
+    print("Opening Spotify authorization in your browser...")
+    webbrowser.open(authorize_url)
+
+    print("Waiting for authorization", end="", flush=True)
+    poll_interval = 2
+    max_wait = 120
+    elapsed = 0
+
+    while elapsed < max_wait:
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+        print(".", end="", flush=True)
+
+        try:
+            response = urlopen(f"{REMOTE_TOKEN_URL}/{session_id}")
+            if response.status == 200:
+                token_data = json.loads(response.read().decode())
+                # Ensure the token data has the fields spotipy expects
+                if "access_token" not in token_data:
+                    continue
+                if "expires_at" not in token_data:
+                    token_data["expires_at"] = int(time.time()) + token_data.get("expires_in", 3600)
+                if "token_type" not in token_data:
+                    token_data["token_type"] = "Bearer"
+                if "scope" not in token_data:
+                    token_data["scope"] = SCOPES
+
+                with open(".spotify_cache", "w") as f:
+                    json.dump(token_data, f)
+
+                print("\nAuthorization successful!")
+                return True
+        except (URLError, json.JSONDecodeError):
+            continue
+
+    print("\nAuthorization timed out. Please try again.")
+    return False
+
+
 class SpotifyClient:
     def __init__(self):
+        cache_path = ".spotify_cache"
+        cache_valid = False
+
+        # Check if we already have a valid cached token
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "r") as f:
+                    cached = json.load(f)
+                if cached.get("access_token") and cached.get("expires_at", 0) > time.time():
+                    cache_valid = True
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        # If no valid cache and we're in a terminal, try remote auth
+        if not cache_valid and sys.stdout.isatty():
+            remote_auth()
+
         auth_manager = SpotifyOAuth(
             client_id=os.getenv("SPOTIPY_CLIENT_ID"),
             client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
-            redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI", "http://localhost:8888/callback"),
+            redirect_uri=REMOTE_CALLBACK_URL,
             scope=SCOPES,
-            cache_path=".spotify_cache",
+            cache_path=cache_path,
         )
         self.sp = spotipy.Spotify(auth_manager=auth_manager)
 

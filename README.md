@@ -28,7 +28,7 @@ A sleek Spotify client for your terminal. Control playback, browse your library,
 
 1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
 2. Create a new application
-3. Set the redirect URI to `http://localhost:8888/callback`
+3. Set the redirect URI to `https://terminalify.343-guilty-spark.io/callback`
 4. Note your **Client ID** and **Client Secret**
 
 ### 2. Install
@@ -47,20 +47,11 @@ pip install -e .
 
 ### 3. Configure
 
-Set your Spotify credentials as environment variables:
-
-```bash
-export SPOTIPY_CLIENT_ID='your-client-id'
-export SPOTIPY_CLIENT_SECRET='your-client-secret'
-export SPOTIPY_REDIRECT_URI='http://localhost:8888/callback'
-```
-
-Or create a `.env` file in the project root:
+Create a `.env` file in the project root with your Spotify credentials:
 
 ```
 SPOTIPY_CLIENT_ID=your-client-id
 SPOTIPY_CLIENT_SECRET=your-client-secret
-SPOTIPY_REDIRECT_URI=http://localhost:8888/callback
 ```
 
 ### 4. Run
@@ -70,6 +61,22 @@ terminal-ify
 ```
 
 On first launch, a browser window will open for Spotify authentication. After granting access, you're good to go.
+
+## Infrastructure (AWS)
+
+The OAuth callback runs on AWS Lambda behind API Gateway with TLS. To deploy:
+
+```bash
+cd infra
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your Spotify credentials
+terraform init
+terraform apply
+```
+
+After applying, Terraform outputs:
+- **certificate_validation_records** — add these CNAMEs in Namecheap for ACM cert validation
+- **custom_domain_target** — CNAME `terminalify.343-guilty-spark.io` to this value in Namecheap
 
 ## Keybindings
 
