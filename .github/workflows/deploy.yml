@@ -9,17 +9,17 @@ on:
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
-env:
-  TF_VAR_spotify_client_id: ${{ secrets.SPOTIFY_CLIENT_ID }}
-  TF_VAR_spotify_client_secret: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_REGION: us-east-1
-
 jobs:
   deploy:
     name: Terraform Apply
     runs-on: ubuntu-latest
+    environment: development
+    env:
+      TF_VAR_spotify_client_id: ${{ secrets.SPOTIFY_CLIENT_ID }}
+      TF_VAR_spotify_client_secret: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
 
     steps:
       - uses: actions/checkout@v4
