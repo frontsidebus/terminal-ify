@@ -39,6 +39,18 @@ resource "aws_apigatewayv2_route" "token" {
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
+resource "aws_apigatewayv2_route" "config" {
+  api_id    = aws_apigatewayv2_api.auth.id
+  route_key = "GET /config"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "refresh" {
+  api_id    = aws_apigatewayv2_api.auth.id
+  route_key = "POST /refresh"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
 # -----------------------------------------------------------------------------
 # Stage
 # -----------------------------------------------------------------------------

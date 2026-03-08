@@ -55,6 +55,15 @@ data "aws_iam_policy_document" "lambda_permissions" {
     ]
     resources = [aws_dynamodb_table.auth_sessions.arn]
   }
+
+  # Secrets Manager
+  statement {
+    effect = "Allow"
+    actions = [
+      "secretsmanager:GetSecretValue",
+    ]
+    resources = [aws_secretsmanager_secret.spotify.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "lambda" {
@@ -79,10 +88,9 @@ resource "aws_lambda_function" "auth_callback" {
 
   environment {
     variables = {
-      SPOTIFY_CLIENT_ID     = var.spotify_client_id
-      SPOTIFY_CLIENT_SECRET = var.spotify_client_secret
-      DOMAIN_NAME           = var.domain_name
-      DYNAMODB_TABLE        = aws_dynamodb_table.auth_sessions.name
+      DOMAIN_NAME    = var.domain_name
+      DYNAMODB_TABLE = aws_dynamodb_table.auth_sessions.name
+      SECRET_ARN     = aws_secretsmanager_secret.spotify.arn
     }
   }
 

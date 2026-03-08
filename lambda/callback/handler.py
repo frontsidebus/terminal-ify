@@ -7,18 +7,29 @@ import urllib.parse
 
 import boto3
 
-SPOTIFY_CLIENT_ID = os.environ["SPOTIFY_CLIENT_ID"]
-SPOTIFY_CLIENT_SECRET = os.environ["SPOTIFY_CLIENT_SECRET"]
 DOMAIN_NAME = os.environ["DOMAIN_NAME"]
 DYNAMODB_TABLE = os.environ["DYNAMODB_TABLE"]
+SECRET_ARN = os.environ["SECRET_ARN"]
 
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(DYNAMODB_TABLE)
+secrets_client = boto3.client("secretsmanager")
+
+_cached_credentials = None
+
+
+def get_spotify_credentials() -> tuple[str, str]:
+    global _cached_credentials
+    if _cached_credentials is None:
+        resp = secrets_client.get_secret_value(SecretId=SECRET_ARN)
+        secret = json.loads(resp["SecretString"])
+        _cached_credentials = (secret["client_id"], secret["client_secret"])
+    return _cached_credentials
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "GET,OPTIONS",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
 }
 
 
@@ -33,9 +44,15 @@ def lambda_handler(event, context):
     if method == "GET" and path == "/callback":
         return handle_callback(event)
 
+    if method == "GET" and path == "/config":
+        return handle_config()
+
     if method == "GET" and path.startswith("/token/"):
         session_id = path.split("/token/", 1)[1]
         return handle_token(session_id)
+
+    if method == "POST" and path == "/refresh":
+        return handle_refresh(event)
 
     return response(404, json.dumps({"error": "not_found"}), content_type="application/json")
 
@@ -98,10 +115,60 @@ def handle_token(session_id):
     return response(200, json.dumps(token_data), content_type="application/json")
 
 
+def handle_config():
+    client_id, _ = get_spotify_credentials()
+    return response(200, json.dumps({
+        "client_id": client_id,
+        "redirect_uri": f"https://{DOMAIN_NAME}/callback",
+        "scope": "user-read-playback-state user-modify-playback-state user-read-currently-playing user-library-read user-library-modify playlist-read-private playlist-read-collaborative user-read-recently-played user-top-read",
+    }), content_type="application/json")
+
+
+def handle_refresh(event):
+    body = event.get("body", "")
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, TypeError):
+        return response(400, json.dumps({"error": "invalid_body"}), content_type="application/json")
+
+    refresh_token = data.get("refresh_token")
+    if not refresh_token:
+        return response(400, json.dumps({"error": "missing_refresh_token"}), content_type="application/json")
+
+    client_id, client_secret = get_spotify_credentials()
+    credentials = base64.b64encode(
+        f"{client_id}:{client_secret}".encode()
+    ).decode()
+
+    post_data = urllib.parse.urlencode({
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://accounts.spotify.com/api/token",
+        data=post_data,
+        headers={
+            "Authorization": f"Basic {credentials}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req) as resp:
+            token_data = json.loads(resp.read().decode())
+    except Exception as e:
+        return response(502, json.dumps({"error": str(e)}), content_type="application/json")
+
+    return response(200, json.dumps(token_data), content_type="application/json")
+
+
 def exchange_code(code):
     redirect_uri = f"https://{DOMAIN_NAME}/callback"
+    client_id, client_secret = get_spotify_credentials()
     credentials = base64.b64encode(
-        f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}".encode()
+        f"{client_id}:{client_secret}".encode()
     ).decode()
 
     data = urllib.parse.urlencode({
