@@ -2,9 +2,10 @@ terraform {
   required_version = ">= 1.0"
 
   backend "s3" {
-    bucket = "terminalify-terraform-state"
-    key    = "terraform.tfstate"
-    region = "us-east-1"
+    bucket  = "terminalify-terraform-state"
+    key     = "terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
   }
 
   required_providers {
@@ -24,7 +25,8 @@ provider "aws" {
 
   default_tags {
     tags = {
-      project = "terminal-ify"
+      Project   = "terminal-ify"
+      ManagedBy = "terraform"
     }
   }
 }

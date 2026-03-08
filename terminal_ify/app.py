@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import sys
+import time
 from typing import ClassVar
 
+from rich.markup import escape as esc
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.screen import ModalScreen
@@ -21,7 +23,6 @@ from textual.widgets import (
     ListItem,
     ListView,
     OptionList,
-    ProgressBar,
     Static,
     TabbedContent,
     TabPane,
@@ -29,6 +30,7 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from terminal_ify.client import SpotifyClient
+from terminal_ify.player import LibrespotPlayer
 from terminal_ify.themes import TERMINAL_IFY_CSS
 
 # ---------------------------------------------------------------------------
@@ -77,6 +79,15 @@ def truncate(text: str, length: int = 40) -> str:
     return text[: length - 1] + "…"
 
 
+def uri_to_id(uri: str) -> str:
+    return uri.replace(":", "-")
+
+
+def id_to_uri(widget_id: str, prefix: str) -> str:
+    rest = widget_id[len(prefix):]
+    return rest.replace("-", ":", 2)
+
+
 # ---------------------------------------------------------------------------
 # Device selector modal
 # ---------------------------------------------------------------------------
@@ -101,7 +112,7 @@ class DeviceSelector(ModalScreen[str | None]):
                 icon = "🔊 " if dev.get("is_active") else "   "
                 name = dev.get("name", "Unknown")
                 dtype = dev.get("type", "")
-                option_items.append(Option(f"{icon}{name}  [dim]({dtype})[/]", id=dev.get("id", "")))
+                option_items.append(Option(f"{icon}{esc(name)}  [dim]({esc(dtype)})[/]", id=dev.get("id", "")))
             if not option_items:
                 option_items.append(Option("[dim]No devices found[/]", id="__none__"))
             yield OptionList(*option_items, id="device-list")
@@ -157,11 +168,11 @@ class NowPlayingBar(Static):
         total_str = format_ms(self.total_ms)
         bar = progress_bar_text(self.progress, width=30)
 
-        track_display = f"[bold #1DB954]{truncate(self.track_name, 35)}[/]" if self.track_name != "Nothing playing" else "[dim]Nothing playing[/]"
-        artist_display = f"  [italic]{truncate(self.artist_name, 25)}[/]" if self.artist_name else ""
-        album_display = f"  [dim]{truncate(self.album_name, 25)}[/]" if self.album_name else ""
+        track_display = f"[bold #1DB954]{esc(truncate(self.track_name, 35))}[/]" if self.track_name != "Nothing playing" else "[dim]Nothing playing[/]"
+        artist_display = f"  [italic]{esc(truncate(self.artist_name, 25))}[/]" if self.artist_name else ""
+        album_display = f"  [dim]{esc(truncate(self.album_name, 25))}[/]" if self.album_name else ""
 
-        device_display = f"  [dim]on[/] [bold]{self.device_name}[/]" if self.device_name else ""
+        device_display = f"  [dim]on[/] [bold]{esc(self.device_name)}[/]" if self.device_name else ""
 
         line1 = f"  {play_icon} {track_display}{artist_display}{album_display}"
         line2 = f"    {elapsed_str} {bar} {total_str}   {shuffle_indicator}  {repeat_indicator}   🔊 {vol_display}  ({self.volume}%){device_display}"
@@ -214,9 +225,9 @@ class NowPlayingView(Static):
 
         play_icon = " ▐▐  PLAYING" if self.is_playing else "  ▶  PAUSED"
         track_info.update(
-            f"\n\n[bold #1DB954 on default]  ♫  {self.track_name}[/]\n"
-            f"[italic]     {self.artist_name}[/]\n"
-            f"[dim]     {self.album_name}[/]\n"
+            f"\n\n[bold #1DB954 on default]  ♫  {esc(self.track_name)}[/]\n"
+            f"[italic]     {esc(self.artist_name)}[/]\n"
+            f"[dim]     {esc(self.album_name)}[/]\n"
         )
 
         elapsed = format_ms(self.elapsed_ms)
@@ -230,7 +241,7 @@ class NowPlayingView(Static):
         controls_area.update(
             f"     [bold]{play_icon}[/]      {shuffle_indicator}      {repeat_indicator}\n\n"
             f"     [dim]space[/] play/pause  [dim]n[/] next  [dim]p[/] prev  "
-            f"[dim]+/-[/] volume  [dim]s[/] shuffle  [dim]r[/] repeat  [dim]d[/] devices[/]"
+            f"[dim]+/-[/] volume  [dim]s[/] shuffle  [dim]r[/] repeat  [dim]d[/] devices"
         )
 
     def watch_track_name(self) -> None:
@@ -286,7 +297,7 @@ class PlaylistsView(Static):
             total = pl.get("tracks", {}).get("total", 0)
             pl_id = pl.get("id", "")
             item = ListItem(
-                Label(f"[bold]{name}[/]  [dim]({total} tracks)[/]"),
+                Label(f"[bold]{esc(name)}[/]  [dim]({total} tracks)[/]"),
                 id=f"pl-{pl_id}",
             )
             lv.append(item)
@@ -322,8 +333,8 @@ class PlaylistsView(Static):
             uri = track.get("uri", "")
             lv.append(
                 ListItem(
-                    Label(f"[bold]{i + 1:>3}.[/]  [#1DB954]{truncate(name, 40)}[/]  [dim]{truncate(artists, 30)}[/]  [dim]{duration}[/]"),
-                    id=f"trk-{uri}",
+                    Label(f"[bold]{i + 1:>3}.[/]  [#1DB954]{esc(truncate(name, 40))}[/]  [dim]{esc(truncate(artists, 30))}[/]  [dim]{duration}[/]"),
+                    id=f"trk-{uri_to_id(uri)}",
                 )
             )
 
@@ -331,7 +342,7 @@ class PlaylistsView(Static):
     def on_track_selected(self, event: ListView.Selected) -> None:
         item_id = event.item.id or ""
         if item_id.startswith("trk-"):
-            uri = item_id[4:]
+            uri = id_to_uri(item_id, "trk-")
             self.play_track(uri)
 
     @work(thread=True)
@@ -380,10 +391,10 @@ class LibraryView(Static):
             lv.append(
                 ListItem(
                     Label(
-                        f"[bold]{i + 1:>3}.[/]  [#1DB954]{truncate(name, 35)}[/]  "
-                        f"[italic]{truncate(artists, 25)}[/]  [dim]{truncate(album, 25)}[/]  [dim]{duration}[/]"
+                        f"[bold]{i + 1:>3}.[/]  [#1DB954]{esc(truncate(name, 35))}[/]  "
+                        f"[italic]{esc(truncate(artists, 25))}[/]  [dim]{esc(truncate(album, 25))}[/]  [dim]{duration}[/]"
                     ),
-                    id=f"lib-{uri}",
+                    id=f"lib-{uri_to_id(uri)}",
                 )
             )
 
@@ -391,7 +402,7 @@ class LibraryView(Static):
     def on_track_selected(self, event: ListView.Selected) -> None:
         item_id = event.item.id or ""
         if item_id.startswith("lib-"):
-            uri = item_id[4:]
+            uri = id_to_uri(item_id, "lib-")
             self.play_track(uri)
 
     @work(thread=True)
@@ -430,7 +441,7 @@ class SearchView(Static):
 
     @work(thread=True)
     def run_search(self, query: str) -> None:
-        self.app.call_from_thread(self._set_status, f"[dim]Searching for \"{query}\"...[/]")
+        self.app.call_from_thread(self._set_status, f"[dim]Searching for \"{esc(query)}\"...[/]")
         app: TerminalIfy = self.app  # type: ignore[assignment]
         results = app.client.search(query, types=["track", "album", "artist"], limit=10)
         self.app.call_from_thread(self._populate_results, results)
@@ -463,8 +474,8 @@ class SearchView(Static):
                 uri = track.get("uri", "")
                 lv.append(
                     ListItem(
-                        Label(f"  [#1DB954]{truncate(name, 35)}[/]  [italic]{truncate(artists, 25)}[/]  [dim]{duration}[/]"),
-                        id=f"sr-track-{uri}",
+                        Label(f"  [#1DB954]{esc(truncate(name, 35))}[/]  [italic]{esc(truncate(artists, 25))}[/]  [dim]{duration}[/]"),
+                        id=f"sr-track-{uri_to_id(uri)}",
                     )
                 )
                 total += 1
@@ -480,8 +491,8 @@ class SearchView(Static):
                 uri = album.get("uri", "")
                 lv.append(
                     ListItem(
-                        Label(f"  [#1DB954]{truncate(name, 35)}[/]  [italic]{truncate(artists, 25)}[/]  [dim]{year}[/]"),
-                        id=f"sr-album-{uri}",
+                        Label(f"  [#1DB954]{esc(truncate(name, 35))}[/]  [italic]{esc(truncate(artists, 25))}[/]  [dim]{year}[/]"),
+                        id=f"sr-album-{uri_to_id(uri)}",
                     )
                 )
                 total += 1
@@ -496,8 +507,8 @@ class SearchView(Static):
                 uri = artist.get("uri", "")
                 lv.append(
                     ListItem(
-                        Label(f"  [#1DB954]{name}[/]  [dim]{followers:,} followers[/]"),
-                        id=f"sr-artist-{uri}",
+                        Label(f"  [#1DB954]{esc(name)}[/]  [dim]{followers:,} followers[/]"),
+                        id=f"sr-artist-{uri_to_id(uri)}",
                     )
                 )
                 total += 1
@@ -509,10 +520,10 @@ class SearchView(Static):
     def on_result_selected(self, event: ListView.Selected) -> None:
         item_id = event.item.id or ""
         if item_id.startswith("sr-track-"):
-            uri = item_id[len("sr-track-"):]
+            uri = id_to_uri(item_id, "sr-track-")
             self.play_uri(uri)
         elif item_id.startswith("sr-album-"):
-            uri = item_id[len("sr-album-"):]
+            uri = id_to_uri(item_id, "sr-album-")
             self.play_context(uri)
 
     @work(thread=True)
@@ -572,6 +583,8 @@ class TerminalIfy(App):
     def __init__(self) -> None:
         super().__init__()
         self.client = SpotifyClient()
+        self.player = LibrespotPlayer()
+        self._player_device_id: str | None = None
 
     def compose(self) -> ComposeResult:
         with Vertical(id="app-root"):
@@ -596,10 +609,61 @@ class TerminalIfy(App):
             yield Footer()
 
     def on_mount(self) -> None:
-        """Start the polling timer when the app mounts."""
+        """Start the polling timer and local player when the app mounts."""
+        self._start_local_player()
         self.set_interval(2.0, self.poll_playback)
-        # Initial poll
         self.poll_playback()
+
+    @work(thread=True)
+    def _start_local_player(self) -> None:
+        """Start librespot if available, then auto-connect to it."""
+        if not self.player.is_available():
+            self.app.call_from_thread(
+                self._set_top_device_status,
+                "[dim]librespot not found — remote control only[/]",
+            )
+            return
+
+        if not self.player.start():
+            self.app.call_from_thread(
+                self._set_top_device_status,
+                "[dim]librespot failed to start[/]",
+            )
+            return
+
+        self.app.call_from_thread(
+            self._set_top_device_status,
+            "[dim]Starting local player...[/]",
+        )
+
+        # Poll for the device to appear (librespot needs a moment to register)
+        for _ in range(15):
+            time.sleep(2)
+            if not self.player.is_running:
+                self.app.call_from_thread(
+                    self._set_top_device_status,
+                    "[dim]librespot stopped unexpectedly[/]",
+                )
+                return
+            devices = self.client.get_devices()
+            device_id = self.player.find_device_id(devices)
+            if device_id:
+                self._player_device_id = device_id
+                # Transfer playback to our local player
+                self.client.transfer_playback(device_id)
+                self.poll_playback()
+                return
+
+        self.app.call_from_thread(
+            self._set_top_device_status,
+            "[dim]Local player ready — select 'terminal-ify' in devices (d)[/]",
+        )
+
+    def _set_top_device_status(self, markup: str) -> None:
+        try:
+            self.query_one("#top-device", Static).update(markup)
+        except NoMatches:
+            pass
 
     @work(thread=True)
     def poll_playback(self) -> None:
@@ -635,7 +699,8 @@ class TerminalIfy(App):
             self.repeat_state = playback.get("repeat_state", "off")
 
             device = playback.get("device", {})
-            self.volume_level = device.get("volume_percent", 50) or 50
+            vol = device.get("volume_percent")
+            self.volume_level = vol if vol is not None else 50
             self.device_name = device.get("name", "")
 
         self._sync_widgets()
@@ -675,7 +740,7 @@ class TerminalIfy(App):
         try:
             top_device = self.query_one("#top-device", Static)
             if self.device_name:
-                top_device.update(f"[dim]Playing on[/] [bold]{self.device_name}[/]")
+                top_device.update(f"[dim]Playing on[/] [bold]{esc(self.device_name)}[/]")
             else:
                 top_device.update("[dim]No active device[/]")
         except NoMatches:
@@ -776,6 +841,7 @@ class TerminalIfy(App):
 
 def main() -> None:
     """Launch the terminal-ify application."""
+    app: TerminalIfy | None = None
     try:
         app = TerminalIfy()
         app.run()
@@ -786,19 +852,16 @@ def main() -> None:
             for keyword in ("client_id", "client_secret", "credentials", "token", "auth")
         ):
             print(
-                "\n[terminal-ify] Spotify credentials are missing or invalid.\n"
+                "\n[terminal-ify] Could not reach the auth server or token is invalid.\n"
                 "\n"
-                "To get started, create a .env file with the following variables:\n"
-                "\n"
-                "    SPOTIPY_CLIENT_ID=your_client_id\n"
-                "    SPOTIPY_CLIENT_SECRET=your_client_secret\n"
-                "    SPOTIPY_REDIRECT_URI=http://localhost:8888/callback\n"
-                "\n"
-                "You can obtain these from https://developer.spotify.com/dashboard\n"
+                "Make sure the auth server is reachable and try again.\n"
             )
             sys.exit(1)
         else:
             raise
+    finally:
+        if app is not None:
+            app.player.stop()
 
 
 if __name__ == "__main__":

@@ -9,6 +9,19 @@ data "archive_file" "lambda" {
 }
 
 # -----------------------------------------------------------------------------
+# CloudWatch Log Group (explicit, with retention)
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_log_group" "lambda" {
+  name              = "/aws/lambda/terminalify-auth-callback"
+  retention_in_days = var.lambda_log_retention_days
+
+  tags = {
+    Name = "terminalify-auth-callback-logs"
+  }
+}
+
+# -----------------------------------------------------------------------------
 # IAM role and policies
 # -----------------------------------------------------------------------------
 
@@ -34,15 +47,17 @@ resource "aws_iam_role" "lambda" {
 }
 
 data "aws_iam_policy_document" "lambda_permissions" {
-  # CloudWatch Logs
+  # CloudWatch Logs — scoped to the specific log group
   statement {
     effect = "Allow"
     actions = [
-      "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:PutLogEvents",
     ]
-    resources = ["arn:aws:logs:*:*:*"]
+    resources = [
+      aws_cloudwatch_log_group.lambda.arn,
+      "${aws_cloudwatch_log_group.lambda.arn}:*",
+    ]
   }
 
   # DynamoDB
@@ -81,6 +96,7 @@ resource "aws_lambda_function" "auth_callback" {
   role             = aws_iam_role.lambda.arn
   handler          = "handler.lambda_handler"
   runtime          = "python3.12"
+  architectures    = ["arm64"]
   timeout          = 30
   memory_size      = 128
   filename         = data.archive_file.lambda.output_path
@@ -93,6 +109,11 @@ resource "aws_lambda_function" "auth_callback" {
       SECRET_ARN     = aws_secretsmanager_secret.spotify.arn
     }
   }
+
+  depends_on = [
+    aws_cloudwatch_log_group.lambda,
+    aws_iam_role_policy.lambda,
+  ]
 
   tags = {
     Name = "terminalify-auth-callback"

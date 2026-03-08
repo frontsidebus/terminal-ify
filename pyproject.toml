@@ -38,5 +38,16 @@ Issues = "https://github.com/frontsidebus/terminal-ify/issues"
 [project.scripts]
 terminal-ify = "terminal_ify.app:main"
 
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
 [tool.setuptools.packages.find]
 include = ["terminal_ify*"]

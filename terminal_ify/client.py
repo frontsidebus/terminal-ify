@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import time
 import uuid
@@ -16,7 +17,7 @@ CACHE_PATH = ".spotify_cache"
 
 def fetch_config() -> dict:
     """Fetch client_id, redirect_uri, and scope from the server."""
-    resp = urlopen(f"{API_BASE}/config")
+    resp = urlopen(f"{API_BASE}/config", timeout=10)
     return json.loads(resp.read().decode())
 
 
@@ -30,7 +31,7 @@ def refresh_token_remote(refresh_token: str) -> dict | None:
         method="POST",
     )
     try:
-        with urlopen(req) as resp:
+        with urlopen(req, timeout=10) as resp:
             return json.loads(resp.read().decode())
     except URLError:
         return None
@@ -46,8 +47,9 @@ def load_cached_token() -> dict | None:
 
 
 def save_token(token_data: dict) -> None:
-    """Save token data to cache file."""
-    with open(CACHE_PATH, "w") as f:
+    """Save token data to cache file with restricted permissions."""
+    fd = os.open(CACHE_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
         json.dump(token_data, f)
 
 
@@ -115,7 +117,7 @@ def remote_auth() -> bool:
         print(".", end="", flush=True)
 
         try:
-            resp = urlopen(f"{API_BASE}/token/{session_id}")
+            resp = urlopen(f"{API_BASE}/token/{session_id}", timeout=10)
             if resp.status == 200:
                 token_data = json.loads(resp.read().decode())
                 if "access_token" not in token_data:
@@ -134,7 +136,7 @@ def remote_auth() -> bool:
 
 
 class SpotifyClient:
-    def __init__(self):
+    def __init__(self) -> None:
         token = ensure_valid_token()
         if not token:
             raise RuntimeError("Could not obtain Spotify access token")

@@ -44,7 +44,7 @@ Screen {
     color: #727272;
     text-style: bold;
     padding: 1 2 0 2;
-    text-transform: uppercase;
+
 }
 
 .nav-item {
@@ -349,7 +349,7 @@ ProgressBar > .bar--bar:hover {
     color: #727272;
     border-bottom: solid #282828;
     text-style: bold;
-    text-transform: uppercase;
+
 }
 
 /* ---- Playlist Items / Cards ---- */

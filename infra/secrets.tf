@@ -3,7 +3,9 @@
 # -----------------------------------------------------------------------------
 
 resource "aws_secretsmanager_secret" "spotify" {
-  name = "terminalify/spotify-credentials"
+  name                    = "terminalify/spotify-credentials"
+  description             = "Spotify OAuth client credentials for terminal-ify auth flow."
+  recovery_window_in_days = 7
 
   tags = {
     Name = "terminalify-spotify-credentials"

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 import base64
 import urllib.request
@@ -71,8 +72,8 @@ def handle_callback(event):
 
     try:
         token_data = exchange_code(code)
-    except Exception as e:
-        return response(502, error_page(f"Token exchange failed: {e}"))
+    except Exception:
+        return response(502, error_page("Token exchange failed. Please try again."))
 
     if "error" in token_data:
         return response(400, error_page(token_data.get("error_description", token_data["error"])))
@@ -92,7 +93,13 @@ def handle_callback(event):
     return response(200, success_page())
 
 
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
 def handle_token(session_id):
+    if not _UUID_RE.match(session_id):
+        return response(400, json.dumps({"error": "invalid_session_id"}), content_type="application/json")
+
     result = table.get_item(Key={"session_id": session_id})
     item = result.get("Item")
 
@@ -158,8 +165,8 @@ def handle_refresh(event):
     try:
         with urllib.request.urlopen(req) as resp:
             token_data = json.loads(resp.read().decode())
-    except Exception as e:
-        return response(502, json.dumps({"error": str(e)}), content_type="application/json")
+    except Exception:
+        return response(502, json.dumps({"error": "token_refresh_failed"}), content_type="application/json")
 
     return response(200, json.dumps(token_data), content_type="application/json")
 

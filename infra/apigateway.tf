@@ -52,13 +52,46 @@ resource "aws_apigatewayv2_route" "refresh" {
 }
 
 # -----------------------------------------------------------------------------
-# Stage
+# Access logging
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_log_group" "api_gateway" {
+  name              = "/aws/apigateway/terminalify-auth"
+  retention_in_days = var.lambda_log_retention_days
+
+  tags = {
+    Name = "terminalify-auth-api-logs"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Stage (with throttling and access logging)
 # -----------------------------------------------------------------------------
 
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.auth.id
   name        = "$default"
   auto_deploy = true
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_gateway.arn
+    format = jsonencode({
+      requestId      = "$context.requestId"
+      ip             = "$context.identity.sourceIp"
+      requestTime    = "$context.requestTime"
+      httpMethod     = "$context.httpMethod"
+      routeKey       = "$context.routeKey"
+      status         = "$context.status"
+      protocol       = "$context.protocol"
+      responseLength = "$context.responseLength"
+      integrationError = "$context.integrationErrorMessage"
+    })
+  }
+
+  default_route_settings {
+    throttling_burst_limit = var.api_throttling_burst_limit
+    throttling_rate_limit  = var.api_throttling_rate_limit
+  }
 
   tags = {
     Name = "terminalify-auth-default-stage"
